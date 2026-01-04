@@ -56,6 +56,10 @@ const Agent = ({
   const recognitionRef = useRef<any>(null);
   const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
   const streamChatRef = useRef<((message: string) => Promise<void>) | null>(null);
+  const isCallActiveRef = useRef(isCallActive);
+  const isMutedRef = useRef(isMuted);
+  const isSpeakingRef = useRef(isSpeaking);
+  const isProcessingRef = useRef(isProcessing);
 
   const systemPrompt = `You are an expert AI interviewer conducting a mock ${interviewType} interview for a ${role} position.
 
@@ -76,11 +80,28 @@ Current question number: ${currentQuestionIndex + 1} of ${questions.length}
 
 Start by greeting the candidate named ${userName}, briefly introduce yourself as their AI interviewer, and ask the first question.`;
 
+  // Keep refs in sync with state
+  useEffect(() => {
+    isCallActiveRef.current = isCallActive;
+  }, [isCallActive]);
+  
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+  
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+  
+  useEffect(() => {
+    isProcessingRef.current = isProcessing;
+  }, [isProcessing]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Initialize speech recognition
+  // Initialize speech recognition (only once)
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -90,6 +111,9 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
       return;
     }
 
+    // Don't recreate if already exists
+    if (recognitionRef.current) return;
+
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
@@ -97,18 +121,20 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
 
     recognition.onstart = () => {
       setIsListening(true);
+      console.log('Speech recognition started');
     };
 
     recognition.onend = () => {
       setIsListening(false);
+      console.log('Speech recognition ended');
       // Restart listening if call is active and not muted and not speaking
-      if (isCallActive && !isMuted && !isSpeaking && !isProcessing) {
+      if (isCallActiveRef.current && !isMutedRef.current && !isSpeakingRef.current && !isProcessingRef.current) {
         setTimeout(() => {
-          if (isCallActive && !isMuted && !isSpeaking) {
+          if (isCallActiveRef.current && !isMutedRef.current && !isSpeakingRef.current && recognitionRef.current) {
             try {
-              recognition.start();
-            } catch (e) {
-              // Already started or error
+              recognitionRef.current.start();
+            } catch (e: any) {
+              console.log('Recognition start error (expected if already running):', e.message);
             }
           }
         }, 500);
@@ -118,22 +144,32 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
+      
       if (event.error === 'no-speech') {
         // Restart listening if no speech detected
-        if (isCallActive && !isMuted && !isSpeaking) {
+        if (isCallActiveRef.current && !isMutedRef.current && !isSpeakingRef.current && recognitionRef.current) {
           setTimeout(() => {
-            try {
-              recognition.start();
-            } catch (e) {
-              // Already started or error
+            if (isCallActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
+              try {
+                recognitionRef.current.start();
+              } catch (e: any) {
+                console.log('Recognition start error:', e.message);
+              }
             }
           }, 1000);
         }
+      } else if (event.error === 'not-allowed') {
+        toast({
+          variant: "destructive",
+          title: "Microphone Permission",
+          description: "Please allow microphone access to use voice input.",
+        });
       }
     };
 
     recognition.onresult = async (event: any) => {
       const transcript = event.results[0][0].transcript;
+      console.log('Speech recognized:', transcript);
       if (transcript.trim() && streamChatRef.current) {
         // Stop listening while processing
         recognition.stop();
@@ -152,9 +188,10 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
         } catch (e) {
           // Ignore errors
         }
+        recognitionRef.current = null;
       }
     };
-  }, [isCallActive, isMuted, isSpeaking, isProcessing]);
+  }, [toast]);
 
   // Cleanup speech synthesis on unmount
   useEffect(() => {
@@ -163,6 +200,34 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
         window.speechSynthesis.cancel();
       }
     };
+  }, []);
+
+  // Helper function to select best natural voice
+  const selectNaturalVoice = useCallback((voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null => {
+    if (voices.length === 0) return null;
+    
+    // Prefer natural-sounding voices (common names for natural/premium voices)
+    const preferredVoices = voices.filter(voice => 
+      voice.lang.startsWith('en') && (
+        voice.name.toLowerCase().includes('natural') ||
+        voice.name.toLowerCase().includes('premium') ||
+        voice.name.toLowerCase().includes('neural') ||
+        voice.name.toLowerCase().includes('enhanced') ||
+        voice.name.toLowerCase().includes('samantha') ||
+        voice.name.toLowerCase().includes('alex') ||
+        voice.name.toLowerCase().includes('daniel') ||
+        voice.name.toLowerCase().includes('google us english') ||
+        voice.name.toLowerCase().includes('google uk english')
+      )
+    );
+    
+    if (preferredVoices.length > 0) {
+      return preferredVoices[0];
+    }
+    
+    // Fallback to any English voice
+    const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+    return englishVoices.length > 0 ? englishVoices[0] : null;
   }, []);
 
   // Text-to-speech function with natural, conversational voice
@@ -185,32 +250,37 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
       utterance.volume = 1.0;
       utterance.lang = 'en-US';
 
-      // Try to select a more natural voice if available
+      // Try to select a more natural voice
       const voices = window.speechSynthesis.getVoices();
-      if (voices.length > 0) {
-        // Prefer natural-sounding voices (common names for natural voices)
-        const preferredVoices = voices.filter(voice => 
-          voice.lang.startsWith('en') && (
-            voice.name.toLowerCase().includes('natural') ||
-            voice.name.toLowerCase().includes('premium') ||
-            voice.name.toLowerCase().includes('neural') ||
-            voice.name.toLowerCase().includes('enhanced') ||
-            voice.name.toLowerCase().includes('samantha') ||
-            voice.name.toLowerCase().includes('alex') ||
-            voice.name.toLowerCase().includes('daniel') ||
-            voice.name.toLowerCase().includes('google')
-          )
-        );
-        
-        if (preferredVoices.length > 0) {
-          utterance.voice = preferredVoices[0];
-        } else {
-          // Fallback to any English voice
-          const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
-          if (englishVoices.length > 0) {
-            utterance.voice = englishVoices[0];
+      const selectedVoice = selectNaturalVoice(voices);
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+
+      // If voices aren't loaded yet, wait for them
+      if (voices.length === 0) {
+        const onVoicesChanged = () => {
+          const updatedVoices = window.speechSynthesis.getVoices();
+          const selectedVoice = selectNaturalVoice(updatedVoices);
+          if (selectedVoice) {
+            utterance.voice = selectedVoice;
           }
+          window.speechSynthesis.speak(utterance);
+          window.speechSynthesis.onvoiceschanged = null;
+        };
+        window.speechSynthesis.onvoiceschanged = onVoicesChanged;
+        // Also try to get voices immediately in case they're available now
+        const immediateVoices = window.speechSynthesis.getVoices();
+        if (immediateVoices.length > 0) {
+          window.speechSynthesis.onvoiceschanged = null;
+          const selectedVoice = selectNaturalVoice(immediateVoices);
+          if (selectedVoice) {
+            utterance.voice = selectedVoice;
+          }
+          window.speechSynthesis.speak(utterance);
         }
+      } else {
+        window.speechSynthesis.speak(utterance);
       }
 
       utterance.onstart = () => {
@@ -231,9 +301,8 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
       };
 
       speechSynthesisRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
     });
-  }, []);
+  }, [selectNaturalVoice]);
 
   const streamChat = async (userMessage: string) => {
     setIsProcessing(true);
@@ -261,7 +330,16 @@ Your behavior:
 ${questions.length > 0 ? `Interview questions to ask (in order):
 ${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}` : ''}
 
-Start by greeting the candidate named ${userName}, briefly introduce yourself as their AI interviewer, and ask the first question.`;
+Current question index (0-based): ${currentQuestionIndex}
+
+All interview questions (fixed order):
+${questions.map((q, i) => `${i}. ${q}`).join("\n")}
+
+Instruction (STRICT):
+- Ask ONLY the question at index ${currentQuestionIndex}
+- DO NOT repeat previous questions
+- DO NOT restart or re-introduce yourself
+- If index is out of range, politely conclude the interview`;
 
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`,
@@ -415,18 +493,17 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
       // Send initial greeting (will trigger voice)
       await streamChat("Hello, I'm ready to begin the interview.");
       
-      // Start listening after a short delay
-      if (!isMuted && recognitionRef.current) {
-        setTimeout(() => {
-          if (isCallActive && !isMuted && !isSpeaking) {
-            try {
-              recognitionRef.current.start();
-            } catch (e) {
-              // Already started or error
-            }
+      // Start listening after a short delay (after AI greeting)
+      setTimeout(() => {
+        if (recognitionRef.current && isCallActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
+          try {
+            recognitionRef.current.start();
+            console.log('Starting speech recognition after call start');
+          } catch (e: any) {
+            console.log('Recognition start error:', e.message);
           }
-        }, 2000);
-      }
+        }
+      }, 3000);
     }
   };
 
@@ -448,24 +525,26 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
   const toggleMute = () => {
     const newMutedState = !isMuted;
     setIsMuted(newMutedState);
+    isMutedRef.current = newMutedState;
     
     if (recognitionRef.current) {
       if (newMutedState) {
         // Stop listening when muted
         try {
           recognitionRef.current.stop();
+          setIsListening(false);
         } catch (e) {
           // Ignore errors
         }
-        setIsListening(false);
-      } else if (isCallActive && !isSpeaking && !isProcessing) {
+      } else if (isCallActiveRef.current && !isSpeakingRef.current && !isProcessingRef.current) {
         // Start listening when unmuted
         setTimeout(() => {
-          if (isCallActive && !isMuted && !isSpeaking) {
+          if (recognitionRef.current && isCallActiveRef.current && !isMutedRef.current && !isSpeakingRef.current) {
             try {
               recognitionRef.current.start();
-            } catch (e) {
-              // Already started or error
+              console.log('Starting speech recognition after unmute');
+            } catch (e: any) {
+              console.log('Recognition start error:', e.message);
             }
           }
         }, 500);
