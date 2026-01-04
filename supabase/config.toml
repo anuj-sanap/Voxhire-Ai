@@ -1,1 +1,13 @@
 project_id = "qwfgtpfbhurpqmnvgiru"
+
+[functions.generate-interview]
+verify_jwt = false
+
+[functions.generate-feedback]
+verify_jwt = false
+
+[functions.ai-chat]
+verify_jwt = false
+
+[functions.elevenlabs-conversation-token]
+verify_jwt = false
