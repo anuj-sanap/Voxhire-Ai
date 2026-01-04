@@ -231,38 +231,7 @@ Start by greeting the candidate named ${userName}, briefly introduce yourself as
       };
 
       speechSynthesisRef.current = utterance;
-      
-      // If voices are not loaded yet, wait for them
-      if (voices.length === 0) {
-        window.speechSynthesis.onvoiceschanged = () => {
-          const updatedVoices = window.speechSynthesis.getVoices();
-          const preferredVoices = updatedVoices.filter(voice => 
-            voice.lang.startsWith('en') && (
-              voice.name.toLowerCase().includes('natural') ||
-              voice.name.toLowerCase().includes('premium') ||
-              voice.name.toLowerCase().includes('neural') ||
-              voice.name.toLowerCase().includes('enhanced') ||
-              voice.name.toLowerCase().includes('samantha') ||
-              voice.name.toLowerCase().includes('alex') ||
-              voice.name.toLowerCase().includes('daniel') ||
-              voice.name.toLowerCase().includes('google')
-            )
-          );
-          
-          if (preferredVoices.length > 0) {
-            utterance.voice = preferredVoices[0];
-          } else {
-            const englishVoices = updatedVoices.filter(voice => voice.lang.startsWith('en'));
-            if (englishVoices.length > 0) {
-              utterance.voice = englishVoices[0];
-            }
-          }
-          
-          window.speechSynthesis.speak(utterance);
-        };
-      } else {
-        window.speechSynthesis.speak(utterance);
-      }
+      window.speechSynthesis.speak(utterance);
     });
   }, []);
 
