@@ -1,49 +1,155 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Star, ThumbsUp, AlertCircle, TrendingUp, RotateCcw } from "lucide-react";
+import { ArrowLeft, Star, ThumbsUp, AlertCircle, TrendingUp, RotateCcw, Loader2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useInterviews, Interview, InterviewFeedback } from "@/hooks/useInterviews";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 import Logo from "@/components/Logo";
 import Agent from "@/components/Agent";
 
-const Interview = () => {
+const InterviewPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [isCompleted, setIsCompleted] = useState(false);
+  const { toast } = useToast();
+  const { user, loading: authLoading } = useAuth();
+  const { getInterview, getFeedback, saveFeedback, updateInterviewStatus } = useInterviews();
+  
+  const [interview, setInterview] = useState<Interview | null>(null);
+  const [feedback, setFeedback] = useState<InterviewFeedback | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
 
-  // Sample interview data based on ID
-  const interview = {
-    id,
-    role: "Frontend Developer Interview",
-    type: "technical",
-    techStack: ["React", "TypeScript", "TailwindCSS"],
+  useEffect(() => {
+    if (!authLoading && !user) {
+      navigate("/sign-in");
+      return;
+    }
+
+    if (id && user) {
+      loadInterview();
+    }
+  }, [id, user, authLoading]);
+
+  const loadInterview = async () => {
+    if (!id) return;
+
+    setIsLoading(true);
+    const interviewData = await getInterview(id);
+    
+    if (!interviewData) {
+      toast({
+        variant: "destructive",
+        title: "Interview not found",
+        description: "The interview you're looking for doesn't exist.",
+      });
+      navigate("/dashboard");
+      return;
+    }
+
+    setInterview(interviewData);
+
+    // Check if feedback already exists
+    if (interviewData.status === "completed") {
+      const existingFeedback = await getFeedback(id);
+      if (existingFeedback) {
+        setFeedback(existingFeedback);
+        setShowFeedback(true);
+      }
+    }
+
+    setIsLoading(false);
   };
 
-  // Sample feedback data
-  const feedback = {
-    overallScore: 85,
-    strengths: [
-      "Strong understanding of React fundamentals",
-      "Clear communication of technical concepts",
-      "Good problem-solving approach",
-    ],
-    improvements: [
-      "Could elaborate more on performance optimization techniques",
-      "Consider discussing more real-world examples",
-    ],
-    rating: 4.2,
-    categories: [
-      { name: "Technical Knowledge", score: 88 },
-      { name: "Communication", score: 82 },
-      { name: "Problem Solving", score: 85 },
-      { name: "Cultural Fit", score: 80 },
-    ],
+  const handleInterviewComplete = async (transcript: string) => {
+    if (!interview || !id) return;
+
+    setIsGeneratingFeedback(true);
+
+    try {
+      // Generate feedback using AI
+      const { data, error } = await supabase.functions.invoke('generate-feedback', {
+        body: {
+          role: interview.role,
+          type: interview.type,
+          techStack: interview.tech_stack,
+          transcript
+        }
+      });
+
+      if (error) throw error;
+
+      // Save feedback to database
+      const savedFeedback = await saveFeedback(id, {
+        overallScore: data.overallScore,
+        categoryScores: data.categoryScores,
+        strengths: data.strengths,
+        improvements: data.improvements,
+        finalAssessment: data.finalAssessment
+      });
+
+      if (savedFeedback) {
+        setFeedback(savedFeedback);
+        setShowFeedback(true);
+        toast({
+          title: "Interview Complete!",
+          description: "Your feedback is ready.",
+        });
+      }
+    } catch (error) {
+      console.error("Error generating feedback:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to generate feedback. Please try again.",
+      });
+    } finally {
+      setIsGeneratingFeedback(false);
+    }
   };
 
-  if (isCompleted) {
+  const handleRetake = async () => {
+    if (!id) return;
+    await updateInterviewStatus(id, "in_progress");
+    setShowFeedback(false);
+    setFeedback(null);
+  };
+
+  if (authLoading || isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="size-8 border-2 border-primary-200 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user || !interview) return null;
+
+  const userName = user.user_metadata?.name || user.email?.split("@")[0] || "Candidate";
+
+  // Show feedback generation loading
+  if (isGeneratingFeedback) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-6">
+        <Loader2 className="size-12 text-primary-200 animate-spin" />
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-foreground mb-2">Analyzing Your Interview</h2>
+          <p className="text-muted-foreground">Please wait while we generate your personalized feedback...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show feedback view
+  if (showFeedback && feedback) {
+    const categoryScores = feedback.category_scores as Record<string, number>;
+    
     return (
       <div className="min-h-screen">
         <nav className="flex items-center justify-between px-4 sm:px-8 lg:px-16 py-6 max-w-7xl mx-auto">
           <Logo />
-          <Link to="/" className="btn-secondary flex items-center gap-2">
+          <Link to="/dashboard" className="btn-secondary flex items-center gap-2">
             <ArrowLeft className="size-4" />
             <span>Back to Dashboard</span>
           </Link>
@@ -57,7 +163,7 @@ const Interview = () => {
             </div>
             <h1 className="text-3xl font-bold text-foreground">Interview Complete!</h1>
             <p className="text-muted-foreground max-w-lg">
-              Great job completing your {interview.role}. Here's your detailed feedback.
+              Great job completing your {interview.role} interview. Here's your detailed feedback.
             </p>
           </div>
 
@@ -68,24 +174,29 @@ const Interview = () => {
                 <div className="flex flex-col items-center md:items-start gap-2">
                   <p className="text-muted-foreground">Overall Score</p>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-6xl font-bold text-primary-200">{feedback.overallScore}</span>
+                    <span className="text-6xl font-bold text-primary-200">{feedback.overall_score}</span>
                     <span className="text-2xl text-muted-foreground">/100</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <Star
-                      key={star}
-                      className={`size-8 ${
-                        star <= Math.floor(feedback.rating)
-                          ? "text-yellow-400 fill-yellow-400"
-                          : star <= feedback.rating
-                          ? "text-yellow-400 fill-yellow-400/50"
-                          : "text-muted-foreground"
-                      }`}
-                    />
-                  ))}
-                  <span className="text-xl font-semibold text-foreground ml-2">{feedback.rating}</span>
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const rating = feedback.overall_score / 20;
+                    return (
+                      <Star
+                        key={star}
+                        className={`size-8 ${
+                          star <= Math.floor(rating)
+                            ? "text-yellow-400 fill-yellow-400"
+                            : star <= rating
+                            ? "text-yellow-400 fill-yellow-400/50"
+                            : "text-muted-foreground"
+                        }`}
+                      />
+                    );
+                  })}
+                  <span className="text-xl font-semibold text-foreground ml-2">
+                    {(feedback.overall_score / 20).toFixed(1)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -93,15 +204,17 @@ const Interview = () => {
 
           {/* Categories */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
-            {feedback.categories.map((category) => (
-              <div key={category.name} className="card-border">
+            {Object.entries(categoryScores).map(([name, score]) => (
+              <div key={name} className="card-border">
                 <div className="card-content p-4 flex flex-col gap-2">
-                  <p className="text-sm text-muted-foreground">{category.name}</p>
-                  <p className="text-2xl font-bold text-foreground">{category.score}%</p>
+                  <p className="text-sm text-muted-foreground capitalize">
+                    {name.replace(/([A-Z])/g, ' $1').trim()}
+                  </p>
+                  <p className="text-2xl font-bold text-foreground">{score}%</p>
                   <div className="h-2 bg-dark-200 rounded-full overflow-hidden">
                     <div
                       className="progress-bar transition-all duration-500"
-                      style={{ width: `${category.score}%` }}
+                      style={{ width: `${score}%` }}
                     />
                   </div>
                 </div>
@@ -146,16 +259,26 @@ const Interview = () => {
             </div>
           </div>
 
+          {/* Final Assessment */}
+          {feedback.final_assessment && (
+            <div className="card-border w-full">
+              <div className="card-content p-6">
+                <h3 className="text-lg font-semibold text-foreground mb-3">Final Assessment</h3>
+                <p className="text-light-100">{feedback.final_assessment}</p>
+              </div>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full pt-4">
             <button
-              onClick={() => setIsCompleted(false)}
+              onClick={handleRetake}
               className="btn-secondary flex items-center gap-2"
             >
               <RotateCcw className="size-4" />
               <span>Retake Interview</span>
             </button>
-            <Link to="/" className="btn-primary flex items-center gap-2">
+            <Link to="/dashboard" className="btn-primary flex items-center gap-2">
               <span>Back to Dashboard</span>
             </Link>
           </div>
@@ -164,12 +287,13 @@ const Interview = () => {
     );
   }
 
+  // Show interview view
   return (
     <div className="min-h-screen">
       <nav className="flex items-center justify-between px-4 sm:px-8 lg:px-16 py-6 max-w-7xl mx-auto">
         <Logo />
         <button
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/dashboard")}
           className="btn-secondary flex items-center gap-2"
         >
           <ArrowLeft className="size-4" />
@@ -185,22 +309,19 @@ const Interview = () => {
           </p>
         </div>
 
-        <div className="relative">
-          <Agent userName="Candidate" type="interview" />
-          
-          {/* Complete button for demo */}
-          <div className="flex justify-center mt-8">
-            <button
-              onClick={() => setIsCompleted(true)}
-              className="btn-primary"
-            >
-              Complete Interview (Demo)
-            </button>
-          </div>
-        </div>
+        <Agent 
+          userName={userName} 
+          type="interview"
+          interviewId={interview.id}
+          role={interview.role}
+          interviewType={interview.type}
+          techStack={interview.tech_stack}
+          questions={interview.questions}
+          onComplete={handleInterviewComplete}
+        />
       </main>
     </div>
   );
 };
 
-export default Interview;
+export default InterviewPage;

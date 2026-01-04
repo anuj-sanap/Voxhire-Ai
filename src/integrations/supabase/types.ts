@@ -14,7 +14,119 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      interview_feedback: {
+        Row: {
+          category_scores: Json
+          created_at: string
+          final_assessment: string | null
+          id: string
+          improvements: string[]
+          interview_id: string
+          overall_score: number
+          strengths: string[]
+          user_id: string
+        }
+        Insert: {
+          category_scores?: Json
+          created_at?: string
+          final_assessment?: string | null
+          id?: string
+          improvements?: string[]
+          interview_id: string
+          overall_score: number
+          strengths?: string[]
+          user_id: string
+        }
+        Update: {
+          category_scores?: Json
+          created_at?: string
+          final_assessment?: string | null
+          id?: string
+          improvements?: string[]
+          interview_id?: string
+          overall_score?: number
+          strengths?: string[]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "interview_feedback_interview_id_fkey"
+            columns: ["interview_id"]
+            isOneToOne: false
+            referencedRelation: "interviews"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      interviews: {
+        Row: {
+          created_at: string
+          finished_at: string | null
+          id: string
+          level: string
+          questions: string[]
+          role: string
+          status: string
+          tech_stack: string[]
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          level: string
+          questions?: string[]
+          role: string
+          status?: string
+          tech_stack?: string[]
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          level?: string
+          questions?: string[]
+          role?: string
+          status?: string
+          tech_stack?: string[]
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          email: string
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          email: string
+          id: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

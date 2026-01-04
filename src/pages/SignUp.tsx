@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Mail, Lock, User, ArrowRight, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import Logo from "@/components/Logo";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,21 +15,47 @@ const SignUp = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { signUp, user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user) {
+      navigate("/dashboard");
+    }
+  }, [user, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate sign up
-    setTimeout(() => {
+    const { error } = await signUp(email, password, name);
+
+    if (error) {
       toast({
-        title: "Account created!",
-        description: "Welcome to PrepWise. Let's get you interview-ready!",
+        variant: "destructive",
+        title: "Sign up failed",
+        description: error.message === "User already registered" 
+          ? "An account with this email already exists. Please sign in instead."
+          : error.message,
       });
       setIsLoading(false);
-      navigate("/");
-    }, 1500);
+      return;
+    }
+
+    toast({
+      title: "Account created!",
+      description: "Welcome to PrepWise. Let's get you started!",
+    });
+    setIsLoading(false);
+    navigate("/dashboard");
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="size-8 border-2 border-primary-200 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="auth-layout">
@@ -39,9 +66,9 @@ const SignUp = () => {
             <div className="flex flex-col items-center gap-6">
               <Logo />
               <div className="text-center">
-                <h2 className="text-2xl font-bold text-foreground">Create your account</h2>
+                <h2 className="text-2xl font-bold text-foreground">Create an account</h2>
                 <p className="text-muted-foreground mt-2">
-                  Start your journey to interview success
+                  Start your interview prep journey today
                 </p>
               </div>
             </div>
@@ -50,7 +77,7 @@ const SignUp = () => {
             <form onSubmit={handleSubmit} className="flex flex-col gap-5">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="name" className="text-light-100 font-normal">
-                  Full Name
+                  Name
                 </Label>
                 <div className="relative">
                   <User className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-muted-foreground" />
@@ -93,12 +120,12 @@ const SignUp = () => {
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Create a password"
+                    placeholder="Create a password (min 6 characters)"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="form-input pl-12 pr-12"
                     required
-                    minLength={8}
+                    minLength={6}
                   />
                   <button
                     type="button"
@@ -108,9 +135,6 @@ const SignUp = () => {
                     {showPassword ? <EyeOff className="size-5" /> : <Eye className="size-5" />}
                   </button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Must be at least 8 characters
-                </p>
               </div>
 
               <button

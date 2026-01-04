@@ -10,6 +10,7 @@ interface InterviewCardProps {
   techStack: string[];
   createdAt: string;
   coverImage?: string;
+  status?: string;
 }
 
 const InterviewCard = ({
@@ -19,6 +20,7 @@ const InterviewCard = ({
   techStack,
   createdAt,
   coverImage,
+  status,
 }: InterviewCardProps) => {
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString("en-US", {
@@ -43,13 +45,27 @@ const InterviewCard = ({
           />
           <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
           
-          {/* Badge */}
+          {/* Type Badge */}
           <Badge
             variant={type === "technical" ? "default" : "secondary"}
             className="absolute top-4 right-4 capitalize"
           >
             {type}
           </Badge>
+          
+          {/* Status Badge */}
+          {status && (
+            <Badge
+              variant={status === "completed" ? "default" : "outline"}
+              className={`absolute top-4 left-4 capitalize ${
+                status === "completed" 
+                  ? "bg-[hsl(var(--success-100))] text-white" 
+                  : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+              }`}
+            >
+              {status === "completed" ? "Completed" : "In Progress"}
+            </Badge>
+          )}
         </div>
 
         {/* Content */}
@@ -79,7 +95,7 @@ const InterviewCard = ({
           to={`/interview/${id}`}
           className="btn-primary flex items-center justify-center gap-2 w-full mt-2"
         >
-          <span>Start Interview</span>
+          <span>{status === "completed" ? "View Feedback" : "Continue"}</span>
           <ChevronRight className="size-4" />
         </Link>
       </div>

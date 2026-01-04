@@ -1,36 +1,46 @@
 import { Link } from "react-router-dom";
-import { Plus, Sparkles, Target, TrendingUp } from "lucide-react";
+import { Plus, Sparkles, Target, TrendingUp, LogOut } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useInterviews } from "@/hooks/useInterviews";
 import Logo from "@/components/Logo";
 import InterviewCard from "@/components/InterviewCard";
 
-// Sample interview data
-const sampleInterviews = [
-  {
-    id: "1",
-    role: "Frontend Developer Interview",
-    type: "technical",
-    techStack: ["React", "TypeScript", "TailwindCSS", "Next.js"],
-    createdAt: "2024-01-15",
-  },
-  {
-    id: "2",
-    role: "Backend Developer Interview",
-    type: "technical",
-    techStack: ["Node.js", "Python", "PostgreSQL", "Docker"],
-    createdAt: "2024-01-14",
-  },
-  {
-    id: "3",
-    role: "Behavioral Interview",
-    type: "behavioral",
-    techStack: ["Communication", "Leadership", "Problem Solving"],
-    createdAt: "2024-01-13",
-  },
-];
-
 const Index = () => {
-  const userName = "Guest";
-  const isSignedIn = false;
+  const { user, signOut } = useAuth();
+  const { interviews } = useInterviews();
+
+  const userName = user?.user_metadata?.name || user?.email?.split("@")[0] || "Guest";
+  const isSignedIn = !!user;
+
+  // Show user's recent interviews if signed in, otherwise show samples
+  const displayInterviews = isSignedIn 
+    ? interviews.slice(0, 3) 
+    : [
+        {
+          id: "sample-1",
+          role: "Frontend Developer Interview",
+          type: "technical",
+          tech_stack: ["React", "TypeScript", "TailwindCSS", "Next.js"],
+          created_at: new Date().toISOString(),
+          status: "sample"
+        },
+        {
+          id: "sample-2",
+          role: "Backend Developer Interview",
+          type: "technical",
+          tech_stack: ["Node.js", "Python", "PostgreSQL", "Docker"],
+          created_at: new Date().toISOString(),
+          status: "sample"
+        },
+        {
+          id: "sample-3",
+          role: "Behavioral Interview",
+          type: "behavioral",
+          tech_stack: ["Communication", "Leadership", "Problem Solving"],
+          created_at: new Date().toISOString(),
+          status: "sample"
+        },
+      ];
 
   return (
     <div className="min-h-screen">
@@ -40,11 +50,17 @@ const Index = () => {
         <div className="flex items-center gap-4">
           {isSignedIn ? (
             <div className="flex items-center gap-3">
-              <div className="size-10 rounded-full bg-gradient-to-br from-primary-200 to-accent flex items-center justify-center">
-                <span className="text-dark-100 font-bold">
-                  {userName.charAt(0).toUpperCase()}
-                </span>
-              </div>
+              <Link to="/dashboard" className="flex items-center gap-3">
+                <div className="size-10 rounded-full bg-gradient-to-br from-primary-200 to-accent flex items-center justify-center">
+                  <span className="text-dark-100 font-bold">
+                    {userName.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <span className="text-foreground font-medium hidden sm:block">{userName}</span>
+              </Link>
+              <button onClick={signOut} className="btn-secondary p-2.5" title="Sign Out">
+                <LogOut className="size-4" />
+              </button>
             </div>
           ) : (
             <>
@@ -81,13 +97,23 @@ const Index = () => {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center gap-4">
-            <Link to="/interview/new" className="btn-primary flex items-center gap-2 text-base px-8 py-3">
+            <Link 
+              to={isSignedIn ? "/interview/new" : "/sign-up"} 
+              className="btn-primary flex items-center gap-2 text-base px-8 py-3"
+            >
               <Plus className="size-5" />
               <span>Start Interview</span>
             </Link>
-            <Link to="/sign-up" className="btn-secondary flex items-center gap-2 text-base px-8 py-3">
-              <span>Create Account</span>
-            </Link>
+            {!isSignedIn && (
+              <Link to="/sign-in" className="btn-secondary flex items-center gap-2 text-base px-8 py-3">
+                <span>Sign In</span>
+              </Link>
+            )}
+            {isSignedIn && (
+              <Link to="/dashboard" className="btn-secondary flex items-center gap-2 text-base px-8 py-3">
+                <span>Go to Dashboard</span>
+              </Link>
+            )}
           </div>
         </section>
 
@@ -136,7 +162,10 @@ const Index = () => {
               Start practicing now and get personalized feedback from our AI interviewer.
             </p>
           </div>
-          <Link to="/interview/new" className="btn-primary flex items-center gap-2 text-base px-8 py-3 whitespace-nowrap">
+          <Link 
+            to={isSignedIn ? "/interview/new" : "/sign-up"} 
+            className="btn-primary flex items-center gap-2 text-base px-8 py-3 whitespace-nowrap"
+          >
             <Plus className="size-5" />
             <span>Create Interview</span>
           </Link>
@@ -145,20 +174,31 @@ const Index = () => {
         {/* Past Interviews */}
         <section className="flex flex-col gap-8">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-foreground">Sample Interviews</h2>
-            <Link to="/interviews" className="text-primary-200 hover:underline text-sm font-medium">
-              View all
-            </Link>
+            <h2 className="text-2xl font-bold text-foreground">
+              {isSignedIn ? "Your Recent Interviews" : "Sample Interviews"}
+            </h2>
+            {isSignedIn && interviews.length > 0 && (
+              <Link to="/dashboard" className="text-primary-200 hover:underline text-sm font-medium">
+                View all
+              </Link>
+            )}
           </div>
 
           <div className="interviews-section">
-            {sampleInterviews.map((interview, index) => (
+            {displayInterviews.map((interview, index) => (
               <div
                 key={interview.id}
                 className="animate-slide-up"
                 style={{ animationDelay: `${index * 100}ms` }}
               >
-                <InterviewCard {...interview} />
+                <InterviewCard
+                  id={interview.id}
+                  role={interview.role}
+                  type={interview.type}
+                  techStack={interview.tech_stack}
+                  createdAt={interview.created_at}
+                  status={interview.status}
+                />
               </div>
             ))}
           </div>

@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Briefcase, Code, MessageSquare, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { useInterviews } from "@/hooks/useInterviews";
+import { supabase } from "@/integrations/supabase/client";
 import Logo from "@/components/Logo";
 import Agent from "@/components/Agent";
 import { Input } from "@/components/ui/input";
@@ -14,38 +17,111 @@ const interviewTypes = [
   { id: "mixed", label: "Mixed", icon: Sparkles, description: "Combination of both types" },
 ];
 
+const experienceLevels = [
+  { id: "junior", label: "Junior (0-2 years)" },
+  { id: "mid", label: "Mid-level (2-5 years)" },
+  { id: "senior", label: "Senior (5+ years)" },
+];
+
 const NewInterview = () => {
   const [step, setStep] = useState<"form" | "agent">("form");
   const [role, setRole] = useState("");
   const [techStack, setTechStack] = useState("");
   const [experience, setExperience] = useState("");
   const [selectedType, setSelectedType] = useState("technical");
+  const [selectedLevel, setSelectedLevel] = useState("mid");
   const [isLoading, setIsLoading] = useState(false);
+  const [currentInterview, setCurrentInterview] = useState<{
+    id: string;
+    questions: string[];
+  } | null>(null);
+  
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
+  const { createInterview } = useInterviews();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate("/sign-in");
+    }
+  }, [user, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate processing
-    setTimeout(() => {
+    try {
+      // Generate questions using AI
+      const { data, error } = await supabase.functions.invoke('generate-interview', {
+        body: {
+          role,
+          type: selectedType,
+          level: selectedLevel,
+          techStack: techStack.split(',').map(t => t.trim()).filter(Boolean),
+          numQuestions: 5
+        }
+      });
+
+      if (error) throw error;
+
+      const questions = data.questions || [];
+
+      // Create interview in database
+      const interview = await createInterview(
+        role,
+        selectedType,
+        selectedLevel,
+        techStack.split(',').map(t => t.trim()).filter(Boolean),
+        questions
+      );
+
+      if (!interview) {
+        throw new Error('Failed to create interview');
+      }
+
+      setCurrentInterview({
+        id: interview.id,
+        questions
+      });
+
       toast({
         title: "Interview created!",
         description: "Your AI interviewer is ready. Let's begin!",
       });
-      setIsLoading(false);
+      
       setStep("agent");
-    }, 2000);
+    } catch (error) {
+      console.error('Error creating interview:', error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to create interview. Please try again.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  if (step === "agent") {
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="size-8 border-2 border-primary-200 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
+  const userName = user.user_metadata?.name || user.email?.split("@")[0] || "Candidate";
+
+  if (step === "agent" && currentInterview) {
     return (
       <div className="min-h-screen">
         <nav className="flex items-center justify-between px-4 sm:px-8 lg:px-16 py-6 max-w-7xl mx-auto">
           <Logo />
           <button
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/dashboard")}
             className="btn-secondary flex items-center gap-2"
           >
             <ArrowLeft className="size-4" />
@@ -61,7 +137,15 @@ const NewInterview = () => {
             </p>
           </div>
 
-          <Agent userName="You" type="interview" />
+          <Agent 
+            userName={userName} 
+            type="interview" 
+            interviewId={currentInterview.id}
+            role={role}
+            interviewType={selectedType}
+            techStack={techStack.split(',').map(t => t.trim()).filter(Boolean)}
+            questions={currentInterview.questions}
+          />
         </main>
       </div>
     );
@@ -71,7 +155,7 @@ const NewInterview = () => {
     <div className="min-h-screen">
       <nav className="flex items-center justify-between px-4 sm:px-8 lg:px-16 py-6 max-w-7xl mx-auto">
         <Logo />
-        <Link to="/" className="btn-secondary flex items-center gap-2">
+        <Link to="/dashboard" className="btn-secondary flex items-center gap-2">
           <ArrowLeft className="size-4" />
           <span>Back</span>
         </Link>
@@ -108,6 +192,29 @@ const NewInterview = () => {
                     className="form-input"
                     required
                   />
+                </div>
+
+                {/* Experience Level */}
+                <div className="flex flex-col gap-3">
+                  <Label className="text-light-100 font-normal">Experience Level</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {experienceLevels.map((level) => (
+                      <button
+                        key={level.id}
+                        type="button"
+                        onClick={() => setSelectedLevel(level.id)}
+                        className={`p-4 rounded-xl border transition-all duration-200 text-left ${
+                          selectedLevel === level.id
+                            ? "border-primary-200 bg-primary-200/10"
+                            : "border-border bg-dark-200 hover:border-muted"
+                        }`}
+                      >
+                        <p className={`font-medium text-sm ${selectedLevel === level.id ? "text-primary-200" : "text-foreground"}`}>
+                          {level.label}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Interview Type */}
@@ -180,7 +287,7 @@ const NewInterview = () => {
                   {isLoading ? (
                     <>
                       <div className="size-5 border-2 border-dark-100 border-t-transparent rounded-full animate-spin" />
-                      <span>Creating Interview...</span>
+                      <span>Generating Questions...</span>
                     </>
                   ) : (
                     <>
